@@ -1,0 +1,39 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Slang Labyrinth · Admin</title>
+<style>
+body{background:#0b0618;color:#f4eaff;font-family:system-ui,sans-serif;margin:0;padding:16px;max-width:980px;margin:auto}
+h1{color:#ff3df2}.card{background:#1b1236;border:1px solid #6b3fd6;border-radius:12px;padding:12px;margin:10px 0;overflow-x:auto}
+.k{display:flex;gap:10px;flex-wrap:wrap}.k div{flex:1;min-width:110px;text-align:center;background:#1b1236;border:1px solid #6b3fd6;border-radius:12px;padding:10px}.k b{display:block;font-size:26px;color:#35f2ff}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px;border-bottom:1px solid #33206b;text-align:left}tr.u{cursor:pointer}tr.u:hover{background:#2a1b52}
+input,button{padding:10px;border-radius:8px;border:1px solid #35f2ff;background:#0b0618;color:#fff;margin:4px}button{background:#ff3df2;color:#000;font-weight:700;border:0;cursor:pointer}
+.bars{display:flex;align-items:flex-end;gap:6px;height:100px}.bars div{flex:1;background:#35f2ff;color:#000;text-align:center;font-size:11px;min-height:3px}.bars span{display:block;font-size:10px;color:#f4eaff;text-align:center}
+</style></head><body>
+<h1>📊 Slang Labyrinth · Admin</h1><div id="app"></div>
+<script src="config.js"></script>
+<script>
+const CFG=window.CFG||{},$=id=>document.getElementById(id),esc=x=>String(x??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let tok=null,U={};
+function form(m=''){$('app').innerHTML=`<div class=card><b>Admin sign-in</b><p>${CFG.url?'Sign in with the Supabase Auth user you created for yourself.':'config.js has no Supabase URL yet, so only data stored in <i>this browser</i> can be shown.'}</p>${CFG.url?'<input id=em placeholder=email><input id=pw type=password placeholder=password><button id=go>Sign in</button>':'<button id=lo>View local data</button>'}<p style="color:#ff4d6d">${esc(m)}</p></div>`;
+ if($('go'))$('go').onclick=signin;if($('lo'))$('lo').onclick=local}
+async function signin(){try{const r=await fetch(CFG.url+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:CFG.key,'Content-Type':'application/json'},body:JSON.stringify({email:$('em').value,password:$('pw').value})}),j=await r.json();
+ if(!j.access_token)return form(j.error_description||j.msg||'Sign-in failed');tok=j.access_token;load()}catch(e){form('Network error')}}
+async function load(){const r=await fetch(CFG.url+'/rest/v1/events?select=*&order=created_at.desc&limit=5000',{headers:{apikey:CFG.key,Authorization:'Bearer '+tok}});
+ if(!r.ok)return form('Could not read events ('+r.status+'). Did you run supabase.sql?');render(await r.json(),true)}
+function local(){let DB={u:{}};try{DB=JSON.parse(localStorage.getItem('slangDB'))||DB}catch(e){}const ev=[];
+ for(const k in DB.u){const u=DB.u[k];(u.hist||[]).forEach(h=>ev.push({created_at:new Date(h.t).toISOString(),username:u.name,type:h.type,data:h.data||{}}))}render(ev,false)}
+function render(ev,remote){ev.sort((a,b)=>a.created_at<b.created_at?1:-1);U={};const day=s=>s.slice(0,10),vis=ev.filter(e=>e.type=='visit');
+ ev.forEach(e=>{if(!e.username)return;const u=U[e.username]||(U[e.username]={n:e.username,first:e.created_at,last:e.created_at,logins:0,train:0,maze:0,m:null,ev:[]});u.ev.push(e);
+  if(e.created_at<u.first)u.first=e.created_at;if(e.created_at>u.last)u.last=e.created_at;
+  if(e.type=='login'||e.type=='signup')u.logins++;if(e.type=='training')u.train++;if(e.type.startsWith('maze')||e.type=='level_clear')u.maze++;
+  if(u.m==null&&e.data&&e.data.mastered!=null)u.m=e.data.mastered});
+ const us=Object.values(U).sort((a,b)=>a.last<b.last?1:-1),days=[...Array(7)].map((_,i)=>day(new Date(Date.now()-(6-i)*864e5).toISOString())),cnt=d=>vis.filter(e=>day(e.created_at)==d).length,mx=Math.max(1,...days.map(cnt)),
+ sum=a=>a.reduce((x,u)=>x+u.logins,0),dt=s=>esc(new Date(s).toLocaleString());
+ $('app').innerHTML=`<div class=k><div><b>${remote?vis.length:'n/a'}</b>Visits</div><div><b>${remote?new Set(vis.map(v=>v.visitor)).size:'n/a'}</b>Unique visitors</div><div><b>${us.length}</b>Users</div><div><b>${sum(us)}</b>Logins</div><div><b>${us.reduce((x,u)=>x+u.train,0)}</b>Training sessions</div><div><b>${us.reduce((x,u)=>x+u.maze,0)}</b>Maze events</div></div>
+ ${remote?`<div class=card><b>Visits, last 7 days</b><div class=bars>${days.map(d=>`<div style="height:${cnt(d)/mx*100}%">${cnt(d)}<span>${d.slice(5)}</span></div>`).join('')}</div></div>`:''}
+ <div class=card><b>Users</b> <small>(click a row for history)</small><table><tr><th>User<th>First seen<th>Last seen<th>Logins<th>Training<th>Maze<th>Mastered</tr>${us.map(u=>`<tr class=u data-n="${esc(u.n)}"><td>${esc(u.n)}<td>${dt(u.first)}<td>${dt(u.last)}<td>${u.logins}<td>${u.train}<td>${u.maze}<td>${u.m??'-'}/40</tr>`).join('')||'<tr><td colspan=7>No users yet</tr>'}</table></div>
+ <div id=det></div>
+ <div class=card><b>Latest activity</b><table>${ev.slice(0,30).map(e=>`<tr><td>${dt(e.created_at)}<td>${esc(e.username||'(visitor)')}<td>${esc(e.type)}<td>${esc(JSON.stringify(e.data||{}).slice(0,80))}</tr>`).join('')}</table></div>
+ <button id=out>Sign out</button>`;
+ document.querySelectorAll('tr.u').forEach(r=>r.onclick=()=>{const u=U[r.dataset.n];$('det').innerHTML=`<div class=card><b>History: ${esc(u.n)}</b><table>${u.ev.slice(0,50).map(e=>`<tr><td>${dt(e.created_at)}<td>${esc(e.type)}<td>${esc(JSON.stringify(e.data||{}))}</tr>`).join('')}</table></div>`;$('det').scrollIntoView()});
+ $('out').onclick=()=>{tok=null;form()}}
+form();
+</script></body></html>
